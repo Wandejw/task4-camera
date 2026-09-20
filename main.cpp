@@ -5,6 +5,30 @@
 #include <termios.h>
 #include <unistd.h>
 
+void handleExposureKey(Camera& cam, int input)
+{
+    if (input != 'e' && input != '=' && input != '-')
+        return;
+
+    float exposure = 0.0f;
+    int errorCode = 0;
+    if (input == 'e')
+    {
+        if (cam.getExposure(exposure, errorCode))
+            std::cout << "当前曝光时间: " << exposure << " 微秒" << std::endl;
+        else
+            std::cout << "查询曝光失败，错误码: 0x" << std::hex
+                      << static_cast<unsigned int>(errorCode) << std::dec << std::endl;
+        return;
+    }
+
+    if (cam.changeExposure(input == '=' ? 500.0f : -500.0f, exposure, errorCode))
+        std::cout << "相机实际曝光时间: " << exposure << " 微秒" << std::endl;
+    else
+        std::cout << "修改曝光或读取实际值失败，错误码: 0x" << std::hex
+                  << static_cast<unsigned int>(errorCode) << std::dec << std::endl;
+}
+
 int main()
 {
     SDKContext sdk;                // 初始化 SDK，退出时反初始化
@@ -46,7 +70,7 @@ int main()
         if_zhongduan = (apply == 0);
     }
 
-    std::cout << "按 a 开始抓帧；按 Esc 退出程序。" << std::endl;
+    std::cout << "按 a 开始抓帧；按 e 查询曝光；按 = 增加、- 减少曝光（每次 500 微秒）；按 Esc 退出程序。" << std::endl;
     while (true)
     {
         int input = cv::waitKey(10);
@@ -60,6 +84,8 @@ int main()
         if (input == 27)
             break;
 
+        handleExposureKey(cam, input);
+
         if (input == 'a')
         {
             if (!cam.start())      // 开始抓帧
@@ -67,7 +93,7 @@ int main()
                 std::cout << "抓帧失败";
                 break;
             }
-            std::cout << "抓帧中：按 s 停止抓帧；如需退出，请先按 s，再按 Esc。" << std::endl;
+            std::cout << "抓帧中：按 e 查询曝光；按 = 增加、- 减少曝光（每次 500 微秒）；按 s 停止抓帧；如需退出，请先按 s，再按 Esc。" << std::endl;
             while (true)
             {
                 cv::Mat img;       // 装一帧图像
@@ -82,6 +108,7 @@ int main()
                     if (re == 1)
                         input = zhongduan;
                 }
+                handleExposureKey(cam, input);
                 if (input == 's')
                 {
                     break;
@@ -92,7 +119,7 @@ int main()
                 }
             }
             cam.stop();
-            std::cout << "已停止抓帧。按 a 再次开始；按 Esc 退出程序。" << std::endl;
+            std::cout << "已停止抓帧。按 a 再次开始；按 e 查询曝光；按 = 增加、- 减少曝光；按 Esc 退出程序。" << std::endl;
         }
     }
     if (if_zhongduan != 0)

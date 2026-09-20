@@ -11,8 +11,6 @@ std::vector<std::string> Camera::listcameras()
 		std::vector<std::string> serials;
 		MV_CC_DEVICE_INFO_LIST List;
 		memset(&List, 0, sizeof(List));
-		// 【练习 1】让菜单按序列号排序：把下一行换成支持排序的 MV_CC_EnumDevicesEx2。
-		// 提示：保留 MV_USB_DEVICE、&List；第三个参数填 nullptr，最后填 SortMethod_SerialNumber。
 		int nRet = MV_CC_EnumDevicesEx2(MV_USB_DEVICE, &List,nullptr,SortMethod_SerialNumber);
 		if (MV_OK != nRet || List.nDeviceNum == 0)
 		{
@@ -36,8 +34,6 @@ std::vector<std::string> Camera::listcameras()
 		MV_CC_DEVICE_INFO_LIST List;
 		memset(&List, 0, sizeof(List));
 
-		// 【练习 2】打开相机前还会重新枚举：这里也改成与练习 1 完全相同的排序调用。
-		// 检查点：菜单里的第 N 台应对应下方的 List.pDeviceInfo[N - 1]。
 		int nRet = MV_CC_EnumDevicesEx2(MV_USB_DEVICE, &List,nullptr,SortMethod_SerialNumber);
 		if (MV_OK != nRet || List.nDeviceNum == 0)
 		{
@@ -157,6 +153,90 @@ std::vector<std::string> Camera::listcameras()
 		// 深拷贝一份给调用方
 		out = latest_frame_.clone();
 		return true;
+	}
+
+	// 查询当前曝光时间（微秒）。成功后写入 exposure，失败时写入 SDK 错误码。
+	bool Camera::getExposure(float& exposure, int& errorCode)
+	{
+		if (!handle_)
+		{
+			errorCode = MV_E_HANDLE;
+			return false;
+		}
+
+		MVCC_FLOATVALUE stFloatValue = {0};
+		int nRet = MV_CC_GetFloatValue(handle_, "ExposureTime", &stFloatValue);
+		if (MV_OK != nRet)
+		{
+			errorCode = nRet;
+			return false;
+		}
+
+		exposure = stFloatValue.fCurValue;
+		errorCode = MV_OK;
+		return true;
+	}
+
+	// 关闭自动曝光并设置曝光时间（微秒）；失败时返回 false 并写入错误码。
+	bool Camera::setExposure(float exposure, int& errorCode)
+	{
+		if (!handle_)
+		{
+			errorCode = MV_E_HANDLE;
+			return false;
+		}
+
+		// 先关自动曝光，否则 ExposureTime 是只读的
+		int nRet = MV_CC_SetEnumValue(handle_, "ExposureAuto", MV_EXPOSURE_AUTO_MODE_OFF);
+		if (MV_OK != nRet)
+		{
+			errorCode = nRet;
+			return false;
+		}
+
+		nRet = MV_CC_SetFloatValue(handle_, "ExposureTime", exposure);
+		if (MV_OK != nRet)
+		{
+			errorCode = nRet;
+			return false;
+		}
+
+		errorCode = MV_OK;
+		return true;
+	}
+
+	// 按增量调整曝光时间（微秒）并读回实际值。
+	// 相机可能把数值取整到最近的支持档位，所以写入后必须再读一次才是真实生效值。
+	bool Camera::changeExposure(float delta, float& actual, int& errorCode)
+	{
+		if (!handle_)
+		{
+			errorCode = MV_E_HANDLE;
+			return false;
+		}
+
+		// 读当前值（同时拿到相机的上下限）
+		MVCC_FLOATVALUE stFloatValue = {0};
+		int nRet = MV_CC_GetFloatValue(handle_, "ExposureTime", &stFloatValue);
+		if (MV_OK != nRet)
+		{
+			errorCode = nRet;
+			return false;
+		}
+
+		// 加上增量并夹到相机支持范围内，避免超限写失败
+		float target = stFloatValue.fCurValue + delta;
+		if (target < stFloatValue.fMin)
+			target = stFloatValue.fMin;
+		if (target > stFloatValue.fMax)
+			target = stFloatValue.fMax;
+
+		// 写回（setExposure 负责关自动曝光）
+		if (!setExposure(target, errorCode))
+			return false;
+
+		// 读回真实生效值——这是 changeExposure 与 setExposure 的区别
+		return getExposure(actual, errorCode);
 	}
 
 	// 后台循环取帧：将图像转换为 OpenCV 可用格式，更新最新帧缓存并释放 SDK 帧缓冲。

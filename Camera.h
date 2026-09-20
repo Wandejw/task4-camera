@@ -34,6 +34,9 @@ public:
     bool start();                // 开始拍照
     bool getimg(cv::Mat& out);   // 抓一帧
     void stop();                 // 停止拍照
+    bool getExposure(float& exposure, int& errorCode); // 查询曝光时间（微秒）
+    bool setExposure(float exposure, int& errorCode);  // 关闭自动曝光并设置曝光时间（微秒）
+    bool changeExposure(float delta, float& actual, int& errorCode); // 按增量调整并读回实际值
     std::vector<std::string> listcameras(); // 返回相机序列号，显示交给 main
 
 private:
