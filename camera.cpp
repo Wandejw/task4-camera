@@ -11,7 +11,9 @@ std::vector<std::string> Camera::listcameras()
 		std::vector<std::string> serials;
 		MV_CC_DEVICE_INFO_LIST List;
 		memset(&List, 0, sizeof(List));
-		int nRet = MV_CC_EnumDevices(MV_USB_DEVICE, &List);
+		// 【练习 1】让菜单按序列号排序：把下一行换成支持排序的 MV_CC_EnumDevicesEx2。
+		// 提示：保留 MV_USB_DEVICE、&List；第三个参数填 nullptr，最后填 SortMethod_SerialNumber。
+		int nRet = MV_CC_EnumDevicesEx2(MV_USB_DEVICE, &List,nullptr,SortMethod_SerialNumber);
 		if (MV_OK != nRet || List.nDeviceNum == 0)
 		{
 			return serials;
@@ -34,7 +36,9 @@ std::vector<std::string> Camera::listcameras()
 		MV_CC_DEVICE_INFO_LIST List;
 		memset(&List, 0, sizeof(List));
 
-		int nRet = MV_CC_EnumDevices(MV_USB_DEVICE, &List);
+		// 【练习 2】打开相机前还会重新枚举：这里也改成与练习 1 完全相同的排序调用。
+		// 检查点：菜单里的第 N 台应对应下方的 List.pDeviceInfo[N - 1]。
+		int nRet = MV_CC_EnumDevicesEx2(MV_USB_DEVICE, &List,nullptr,SortMethod_SerialNumber);
 		if (MV_OK != nRet || List.nDeviceNum == 0)
 		{
 			return false;
