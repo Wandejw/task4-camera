@@ -1,6 +1,9 @@
 cmake_minimum_required(VERSION 3.16)
 project(camera LANGUAGES CXX)
 
+# 为编辑器生成与实际构建一致的头文件搜索路径和编译参数。
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 find_package(OpenCV REQUIRED COMPONENTS core highgui imgproc imgcodecs)
 find_package(Threads REQUIRED)
 
