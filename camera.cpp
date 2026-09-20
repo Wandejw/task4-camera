@@ -62,10 +62,8 @@ std::vector<std::string> Camera::listcameras()
 		return true;
 	}
 
-	// 创建相机对象时初始化海康 MVS SDK，并把句柄和打开状态设为初始值。
-	Camera::Camera()
-		: handle_(nullptr)     // 初始化 handle_ 为空
-		, is_open_(false)      // 初始化 is_open_ 为 false
+	// 初始化海康 MVS SDK。
+	SDKContext::SDKContext()
 	{
 		int nRet = MV_CC_Initialize();   // 初始化 SDK
 		if (MV_OK != nRet)
@@ -74,7 +72,20 @@ std::vector<std::string> Camera::listcameras()
 		}
 	}
 
-	// 销毁对象时停止取流线程、关闭设备、销毁句柄并反初始化 SDK。
+	// 反初始化海康 MVS SDK。
+	SDKContext::~SDKContext()
+	{
+		MV_CC_Finalize();   // 反初始化 SDK
+	}
+
+	// 创建相机对象时把句柄和打开状态设为初始值。
+	Camera::Camera()
+		: handle_(nullptr)     // 初始化 handle_ 为空
+		, is_open_(false)      // 初始化 is_open_ 为 false
+	{
+	}
+
+	// 销毁对象时停止取流线程、关闭设备、销毁句柄。
 	Camera::~Camera()
 	{
 		stop();   // 停止拍照（如果还在拍）
@@ -84,7 +95,6 @@ std::vector<std::string> Camera::listcameras()
 			MV_CC_DestroyHandle(handle_);  // 销毁句柄
 			handle_ = nullptr;             // 句柄置空
 		}
-		MV_CC_Finalize();   // 反初始化 SDK
 	}
 
 	// 将相机设为连续采集模式，开始取流并启动后台抓图线程；失败时返回 false。

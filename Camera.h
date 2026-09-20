@@ -13,12 +13,22 @@
 #include <string>               // std::string
 #include <vector>               // std::vector（相机序列号列表）
 
+class SDKContext
+{
+public:
+    SDKContext();                 // 初始化 SDK
+    ~SDKContext();                // 反初始化 SDK
+
+    SDKContext(const SDKContext&) = delete;
+    SDKContext& operator=(const SDKContext&) = delete;
+};
+
 class Camera
 {
 public:
     // ===== 对外接口（main 会调用）=====
-    Camera();                    // 构造函数：初始化 SDK
-    ~Camera();                   // 析构函数：反初始化 SDK、关闭相机
+    Camera();                    // 构造函数
+    ~Camera();                   // 析构函数：关闭相机
 
     bool open(int number);       // 打开第 number 台相机
     bool start();                // 开始拍照

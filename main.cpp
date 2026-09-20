@@ -7,7 +7,8 @@
 
 int main()
 {
-    Camera cam;                    // 创建（初始化 SDK）
+    SDKContext sdk;                // 初始化 SDK，退出时反初始化
+    Camera cam;                    // 创建相机
 
     auto serials = cam.listcameras();
     if (serials.empty())
