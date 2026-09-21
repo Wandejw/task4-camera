@@ -6,21 +6,10 @@
 #ifndef CAMERA_H
 #define CAMERA_H
 
-#include "MvCameraControl.h"       // MV_FRAME_OUT（SDK 回调参数）
 #include <opencv2/opencv.hpp>   // cv::Mat（存图像）
 #include <mutex>                // std::mutex（锁）
 #include <string>               // std::string
 #include <vector>               // std::vector（相机序列号列表）
-
-class SDKContext
-{
-public:
-    SDKContext();                 // 初始化 SDK
-    ~SDKContext();                // 反初始化 SDK
-
-    SDKContext(const SDKContext&) = delete;
-    SDKContext& operator=(const SDKContext&) = delete;
-};
 
 class Camera
 {
@@ -39,7 +28,7 @@ public:
     std::vector<std::string> listcameras(); // 返回相机序列号，显示交给 main
 
 private:
-    static void __stdcall imageCallback(MV_FRAME_OUT* frame, void* user, bool autoFree); // SDK 图像回调
+    friend struct CameraCallbackAdapter; // 允许 camera.cpp 内的 SDK 回调更新帧缓存
 
     // ===== 成员变量 =====
     void* handle_ = nullptr;       // 相机句柄（初始为空）

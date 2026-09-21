@@ -1,5 +1,6 @@
 // 上层交互：选择相机、接收按键、显示画面
 #include "Camera.h"
+#include "SDKContext.h"
 #include <opencv2/opencv.hpp>
 #include <iostream>
 #include <termios.h>

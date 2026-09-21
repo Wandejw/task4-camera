@@ -5,6 +5,12 @@
 #include <iostream>              // std::cout / std::cerr
 #include <vector>
 
+// SDK 回调适配器只存在于实现文件，避免 Camera.h 暴露海康类型。
+struct CameraCallbackAdapter
+{
+	static void __stdcall imageCallback(MV_FRAME_OUT* frameData, void* user, bool autoFree);
+};
+
 // 枚举 USB 相机，返回每台相机的序列号；枚举失败或没有设备时返回空列表。
 std::vector<std::string> Camera::listcameras()
 	{
@@ -58,22 +64,6 @@ std::vector<std::string> Camera::listcameras()
 		return true;
 	}
 
-	// 初始化海康 MVS SDK。
-	SDKContext::SDKContext()
-	{
-		int nRet = MV_CC_Initialize();   // 初始化 SDK
-		if (MV_OK != nRet)
-		{
-			std::cout<<"SDK 初始化失败";
-		}
-	}
-
-	// 反初始化海康 MVS SDK。
-	SDKContext::~SDKContext()
-	{
-		MV_CC_Finalize();   // 反初始化 SDK
-	}
-
 	// 创建相机对象时把句柄和打开状态设为初始值。
 	Camera::Camera()
 		: handle_(nullptr)     // 初始化 handle_ 为空
@@ -104,7 +94,7 @@ std::vector<std::string> Camera::listcameras()
 		}
 
 		// 注册图像回调；SDK 收到一帧后会调用 imageCallback
-		nRet = MV_CC_RegisterImageCallBackEx2(handle_, Camera::imageCallback, this, true);
+		nRet = MV_CC_RegisterImageCallBackEx2(handle_, CameraCallbackAdapter::imageCallback, this, true);
 		if (MV_OK != nRet)
 		{
 			return false;
@@ -231,7 +221,7 @@ std::vector<std::string> Camera::listcameras()
 	}
 
 	// SDK 图像回调：将收到的图像转换为 OpenCV 可用格式并更新最新帧缓存。
-	void __stdcall Camera::imageCallback(MV_FRAME_OUT* frameData, void* user, bool autoFree)
+	void __stdcall CameraCallbackAdapter::imageCallback(MV_FRAME_OUT* frameData, void* user, bool autoFree)
 	{
 		(void)autoFree;
 		Camera* camera = static_cast<Camera*>(user);
