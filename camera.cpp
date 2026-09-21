@@ -81,7 +81,7 @@ std::vector<std::string> Camera::listcameras()
 	{
 	}
 
-	// 销毁对象时停止取流线程、关闭设备、销毁句柄。
+	// 销毁对象时停止取流、关闭设备、销毁句柄。
 	Camera::~Camera()
 	{
 		stop();   // 停止拍照（如果还在拍）
@@ -93,11 +93,18 @@ std::vector<std::string> Camera::listcameras()
 		}
 	}
 
-	// 将相机设为连续采集模式，开始取流并启动后台抓图线程；失败时返回 false。
+	// 将相机设为连续采集模式，注册图像回调并开始取流；失败时返回 false。
 	bool Camera::start()
 	{
 		// 设置触发模式为连续采集（枚举节点用 SetEnumValue）
 		int nRet = MV_CC_SetEnumValue(handle_, "TriggerMode", MV_TRIGGER_MODE_OFF);
+		if (MV_OK != nRet)
+		{
+			return false;
+		}
+
+		// 注册图像回调；SDK 收到一帧后会调用 imageCallback
+		nRet = MV_CC_RegisterImageCallBackEx2(handle_, Camera::imageCallback, this, true);
 		if (MV_OK != nRet)
 		{
 			return false;
@@ -110,35 +117,19 @@ std::vector<std::string> Camera::listcameras()
 			return false;
 		}
 
-		// 重置停止标志
-		should_stop_ = false;
-
-		// 启动后台抓图线程
-		background_thread_ = std::thread(&Camera::grabLoop, this);
-
 		return true;
 	}
 
-	// 通知后台线程退出，停止设备取流，并等待线程结束。
+	// 停止设备取流；SDK 随即停止触发图像回调。
 	void Camera::stop()
 	{
-		// 翻停止标志，让后台线程退出
-		should_stop_ = true;
-
-		// 先停止取流，让 GetImageBuffer 立即返回（否则线程会阻塞到超时）
 		if (handle_)
 		{
 			MV_CC_StopGrabbing(handle_);
 		}
-
-		// 再等后台线程结束
-		if (background_thread_.joinable())
-		{
-			background_thread_.join();
-		}
 	}
 
-	// 将后台线程缓存的最新一帧深拷贝到 out；尚无可用帧时返回 false。
+	// 将回调缓存的最新一帧深拷贝到 out；尚无可用帧时返回 false。
 	bool Camera::getimg(cv::Mat& out)
 	{
 		// 加锁，保护缓存
@@ -239,72 +230,59 @@ std::vector<std::string> Camera::listcameras()
 		return getExposure(actual, errorCode);
 	}
 
-	// 后台循环取帧：将图像转换为 OpenCV 可用格式，更新最新帧缓存并释放 SDK 帧缓冲。
-	void Camera::grabLoop()
+	// SDK 图像回调：将收到的图像转换为 OpenCV 可用格式并更新最新帧缓存。
+	void __stdcall Camera::imageCallback(MV_FRAME_OUT* frameData, void* user, bool autoFree)
 	{
-		while (!should_stop_)
+		(void)autoFree;
+		Camera* camera = static_cast<Camera*>(user);
+		if (camera == nullptr || frameData == nullptr || frameData->pBufAddr == nullptr)
 		{
-			// 准备帧容器
-			MV_FRAME_OUT stFrame;
-			memset(&stFrame, 0, sizeof(stFrame));
+			return;
+		}
 
-			// 抓一帧（超时 1000ms）
-			int nRet = MV_CC_GetImageBuffer(handle_, &stFrame, 1000);
-			if (MV_OK != nRet)
-			{
-				continue;   // 没抓到，继续下一轮
-			}
+		// 取帧信息（宽、高、像素格式）
+		const MV_FRAME_OUT_INFO_EX& stInfo = frameData->stFrameInfo;
 
-			// 取帧信息（宽、高、像素格式）
-			MV_FRAME_OUT_INFO_EX stInfo;
-			memset(&stInfo, 0, sizeof(stInfo));
-			stInfo.enPixelType = stFrame.stFrameInfo.enPixelType;
-			stInfo.nWidth = stFrame.stFrameInfo.nWidth;
-			stInfo.nHeight = stFrame.stFrameInfo.nHeight;
-
-			// 转成 cv::Mat
-			cv::Mat frame;
-			if (stInfo.enPixelType == PixelType_Gvsp_Mono8)
+		// 转成 cv::Mat
+		cv::Mat frame;
+		if (stInfo.enPixelType == PixelType_Gvsp_Mono8)
+		{
+			frame = cv::Mat(stInfo.nHeight, stInfo.nWidth, CV_8UC1, frameData->pBufAddr);
+		}
+		else if (stInfo.enPixelType == PixelType_Gvsp_BGR8_Packed)
+		{
+			frame = cv::Mat(stInfo.nHeight, stInfo.nWidth, CV_8UC3, frameData->pBufAddr);
+		}
+		else
+		{
+			std::vector<unsigned char> bgr(static_cast<size_t>(stInfo.nWidth) * stInfo.nHeight * 3);
+			MV_CC_PIXEL_CONVERT_PARAM_EX cvt = {};
+			cvt.nWidth = stInfo.nWidth;
+			cvt.nHeight = stInfo.nHeight;
+			cvt.enSrcPixelType = stInfo.enPixelType;
+			cvt.pSrcData = frameData->pBufAddr;
+			cvt.nSrcDataLen = stInfo.nFrameLen;
+			cvt.enDstPixelType = PixelType_Gvsp_BGR8_Packed;
+			cvt.pDstBuffer = bgr.data();
+			cvt.nDstBufferSize = bgr.size();
+			int cvtRet = MV_CC_ConvertPixelTypeEx(camera->handle_, &cvt);
+			if (cvtRet == MV_OK)
 			{
-				frame = cv::Mat(stInfo.nHeight, stInfo.nWidth, CV_8UC1, stFrame.pBufAddr);
-			}
-			else if (stInfo.enPixelType == PixelType_Gvsp_BGR8_Packed)
-			{
-				frame = cv::Mat(stInfo.nHeight, stInfo.nWidth, CV_8UC3, stFrame.pBufAddr);
+				cv::Mat converted(stInfo.nHeight, stInfo.nWidth, CV_8UC3, bgr.data());
+				std::lock_guard<std::mutex> guard(camera->frame_mutex_);
+				camera->latest_frame_ = converted.clone();
 			}
 			else
 			{
-				std::vector<unsigned char> bgr(static_cast<size_t>(stInfo.nWidth) * stInfo.nHeight * 3);
-				MV_CC_PIXEL_CONVERT_PARAM_EX cvt = {};
-				cvt.nWidth = stInfo.nWidth;
-				cvt.nHeight = stInfo.nHeight;
-				cvt.enSrcPixelType = stInfo.enPixelType;
-				cvt.pSrcData = stFrame.pBufAddr;
-				cvt.nSrcDataLen = stFrame.stFrameInfo.nFrameLen;
-				cvt.enDstPixelType = PixelType_Gvsp_BGR8_Packed;
-				cvt.pDstBuffer = bgr.data();
-				cvt.nDstBufferSize = bgr.size();
-				int cvtRet = MV_CC_ConvertPixelTypeEx(handle_, &cvt);
-				if (cvtRet == MV_OK)
-				{
-					cv::Mat converted(stInfo.nHeight, stInfo.nWidth, CV_8UC3, bgr.data());
-					std::lock_guard<std::mutex> guard(frame_mutex_);
-					latest_frame_ = converted.clone();
-				}
-				else
-					std::cerr << "像素转换失败，格式: 0x" << std::hex << stInfo.enPixelType
-					          << " 错误码: 0x" << cvtRet << std::dec << '\n';
-				MV_CC_FreeImageBuffer(handle_, &stFrame);
-				continue;
+				std::cerr << "像素转换失败，格式: 0x" << std::hex << stInfo.enPixelType
+				          << " 错误码: 0x" << cvtRet << std::dec << '\n';
 			}
+			return;
+		}
 
-			// 加锁，存进缓存（深拷贝）
-			{
-				std::lock_guard<std::mutex> guard(frame_mutex_);
-				latest_frame_ = frame.clone();
-			}
-
-			// 释放帧缓冲
-			MV_CC_FreeImageBuffer(handle_, &stFrame);
+		// SDK 会在回调返回后回收缓存，因此这里深拷贝到 Camera 自己的缓存中
+		{
+			std::lock_guard<std::mutex> guard(camera->frame_mutex_);
+			camera->latest_frame_ = frame.clone();
 		}
 	}

@@ -6,10 +6,9 @@
 #ifndef CAMERA_H
 #define CAMERA_H
 
+#include "MvCameraControl.h"       // MV_FRAME_OUT（SDK 回调参数）
 #include <opencv2/opencv.hpp>   // cv::Mat（存图像）
-#include <atomic>               // std::atomic<bool>（线程安全标志）
 #include <mutex>                // std::mutex（锁）
-#include <thread>               // std::thread（线程）
 #include <string>               // std::string
 #include <vector>               // std::vector（相机序列号列表）
 
@@ -40,15 +39,13 @@ public:
     std::vector<std::string> listcameras(); // 返回相机序列号，显示交给 main
 
 private:
-    void grabLoop();             // 后台抓图线程函数
+    static void __stdcall imageCallback(MV_FRAME_OUT* frame, void* user, bool autoFree); // SDK 图像回调
 
     // ===== 成员变量 =====
     void* handle_ = nullptr;       // 相机句柄（初始为空）
     bool    is_open_ = false;        // 是否打开成功（初始未打开）
-    std::thread       background_thread_;  // 后台抓图线程
     std::mutex        frame_mutex_;        // 保护最新帧的锁
     cv::Mat           latest_frame_;       // 最新一帧缓存
-    std::atomic<bool> should_stop_{true};  // 停止标志（初始为停止状态）
 };
 
 #endif // CAMERA_H
